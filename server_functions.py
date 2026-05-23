@@ -186,7 +186,6 @@ def get_current_item():
         return None
 
 
-
 def reset_pass_flags():
     # Reset the PASS flag of all connected clients.
     #
@@ -204,7 +203,6 @@ def reset_pass_flags():
 # Command Processing
 # =========================
 def process_view(sock):
-    # TODO:
     # Answer the VIEW command.
     #
     # General logic:
@@ -215,13 +213,19 @@ def process_view(sock):
     #       item name, current price, and current leader
     # 5. Otherwise send VIEW NO_ACTIVE_AUCTION.
     
-    
-    
+    with auction_lock:
+        current_item = get_current_item()
+        
+        if current_item is None:
+            send_message(sock, "[SERVER] NO_MORE_ITEMS")
+        elif auction_active:
+            send_message(sock, f"[SERVER] VIEW ITEM={current_item['name']} PRICE={current_price} LEADER={current_winner_name}")
+        else:
+            send_message(sock, "[SERVER] VIEW NO_ACTIVE_AUCTION")
     pass
 
 
 def process_pass(sock):
-    # TODO:
     # Process the PASS command.
     #
     # General logic:
@@ -230,11 +234,16 @@ def process_pass(sock):
     # 3. Get the client name.
     # 4. Send OK PASS to that client.
     # 5. Broadcast that this client passed.
+    
+    with clients_lock:
+        passed_current_item[sock] = True
+        name = client_names.get(sock)
+        send_message(sock, "[SERVER] OK PASS")
+        broadcast(f"[SERVER] CLIENT_PASSED NAME={name}")
     pass
 
 
 def process_bid(sock, parts):
-    # TODO:
     # Remember:
     # if this function modifies global variables,
     # use the Python keyword global.
@@ -258,18 +267,62 @@ def process_bid(sock, parts):
     # 10. Send OK BID_ACCEPTED.
     # 11. Broadcast NEW_BID.
     # 12. Notify the timer thread with bid_event.set().
+    
+    global current_price
+    global current_winner
+    global current_winner_name
+    global auction_end_time
+    
+    if len(parts) != 2:
+        send_message(sock, "[SERVER] ERROR INVALID_COMMAND")
+        return
+
+    parts = [part.strip() for part in parts if part.strip()]
+
+    try:
+        amount = int(parts[1])
+        sender_name = client_names.get(sock)
+        with auction_lock:
+            
+            # Verify that an auction is active.
+            if auction_active:
+                min_valid = current_price + MIN_INCREMENT
+                if amount < min_valid:
+                    send_message(sock, "[SERVER] ERROR BID_TOO_LOW")
+                    return
+                else:
+                    current_price = amount
+                    current_winner = sock
+                    current_winner_name = sender_name
+                    auction_end_time = time.time() + AUCTION_DURATION
+
+                    # Reset this client's PASS flag.
+                    with clients_lock:
+                        passed_current_item[sock] = False
+
+                    send_message(sock, "[SERVER] OK BID_ACCEPTED")
+                    broadcast(f"[SERVER] NEW_BID NAME={sender_name} PRICE={amount}")
+                    bid_event.set()
+            
+    except ValueError:
+        send_message(sock, "[SERVER] ERROR INVALID_BID_AMOUNT")
+        return
+
     pass
 
 
 def process_exit(sock):
-    # TODO:
     # Process EXIT.
     #
     # General logic:
     # 1. Send OK EXIT.
     # 2. Remove the client with remove_client(sock).
+    with clients_lock:
+        passed_current_item[sock] = True
+        name = client_names.get(sock)
+        send_message(sock, "[SERVER] OK EXIT")
+        remove_client(sock)
     pass
-
 
 # =========================
 # Threads
@@ -282,12 +335,10 @@ def handle_client(sock, addr):
         # Ask the client for its name.
         send_message(sock, "[SERVER] ENTER_NAME")
 
-        # TODO:
         # Read the first line from file_obj as the client name.
         #
         # Suggested syntax:
-        # name = file_obj.readline()
-        name = None
+        name = file_obj.readline()
 
         if not name:
             remove_client(sock)
@@ -299,15 +350,14 @@ def handle_client(sock, addr):
             remove_client(sock)
             return
 
-        # TODO:
         # Save the client information in the server record.
-        #
-        # General logic:
-        # - enter clients_lock
-        # - store the client name
-        # - store file_obj
-        # - mark the client as active
-        # - initialize its PASS flag as False
+        
+        with clients_lock:
+            client_names[sock] = name
+            client_files[sock] = file_obj
+            client_active[sock] = True
+            passed_current_item[sock] = False
+        
 
         send_message(sock, f"[SERVER] HELLO NAME={name}")
         log_message(f"[SERVER] CLIENT_REGISTERED NAME={name} ADDR={addr}")
@@ -317,8 +367,7 @@ def handle_client(sock, addr):
             # Read one command line from file_obj.
             #
             # Suggested syntax:
-            # line = file_obj.readline()
-            line = None
+            line = file_obj.readline()
 
             if not line:
                 break
@@ -332,13 +381,18 @@ def handle_client(sock, addr):
             parts = message.split()
             command = parts[0].upper()
 
-            # TODO:
             # Process the command:
-            # if command == "VIEW": process_view(sock)
-            # elif command == "BID": process_bid(sock, parts)
-            # elif command == "PASS": process_pass(sock)
-            # elif command == "EXIT": process_exit(sock) and return
-            # else: send ERROR INVALID_COMMAND
+            if command == "VIEW":
+                process_view(sock)
+            elif command == "BID":
+                process_bid(sock, parts)
+            elif command == "PASS":
+                process_pass(sock)
+            elif command == "EXIT":
+                process_exit(sock)
+                return
+            else:
+                send_message(sock, "[SERVER] ERROR INVALID_COMMAND")
 
     except:
         pass
@@ -371,7 +425,15 @@ def accept_clients_loop():
 
 
 def auction_loop():
-    # TODO:
+    
+    global auction_started
+    global current_item_index
+    global current_price
+    global current_winner
+    global current_winner_name
+    global auction_active
+    global auction_end_time
+
     # If this function modifies global variables,
     # remember to declare them with global.
     #
@@ -403,13 +465,58 @@ def auction_loop():
     # 6. After all items:
     #       - broadcast SERVER_SHUTDOWN
     #       - set stop_event
-    pass
+    
+    auction_started = True
+    for index, item in enumerate(items):
+        current_item_index = index
+        current_price = item["base_price"]
+        current_winner = None
+        current_winner_name = ""
+        auction_active = True
+        auction_end_time = time.time() + AUCTION_DURATION
+        
+        reset_pass_flags()
+        bid_event.clear()
+        
+        broadcast(f"[SERVER] AUCTION_START ITEM={item['name']} BASE_PRICE={item['base_price']}")
+        
+        while auction_active:
+            remaining = int(auction_end_time - time.time())
+            if remaining <= 0:
+                auction_active = False
+                break
+            
+            # Optionally send TIME_LEFT to clients.
+            # broadcast(f"[SERVER] TIME_LEFT {remaining} seconds")
+            
+            bid_event.wait(timeout=0.5)
+            if bid_event.is_set():
+                bid_event.clear()
+    
+        if current_winner is not None:
+            broadcast(f"[SERVER] AUCTION_END WINNER={current_winner_name} PRICE={current_price}")
+        else:
+            broadcast(f"[SERVER] AUCTION_END WINNER=None")
+        
+    broadcast("[SERVER] SERVER_SHUTDOWN")
+    stop_event.set()    
 
 
 # =========================
 # Start / Shutdown
 # =========================
 def start_server():
+    # If this function modifies global variables,
+    # remember to declare them with global.
+    #
+    # General logic:
+    # 1. Create the server socket.
+    #    Suggested syntax:
+    #    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    #
+    # 2. Allow fast reuse of the port.
+    #    Suggested syntax:
+    #    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSE
     # If this function modifies global variables,
     # remember to declare them with global.
     global server_socket
