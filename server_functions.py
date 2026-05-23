@@ -410,42 +410,52 @@ def auction_loop():
 # Start / Shutdown
 # =========================
 def start_server():
-    # TODO:
     # If this function modifies global variables,
     # remember to declare them with global.
+    global server_socket
+    global accept_thread
+    global auction_thread
+    global client_threads
     #
     # General logic:
     # 1. Create the server socket.
-    #    Suggested syntax:
-    #    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     #
     # 2. Allow fast reuse of the port.
-    #    Suggested syntax:
-    #    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     #
     # 3. Bind the socket to the server address.
-    #    Suggested syntax:
-    #    server_socket.bind((HOST, PORT))
+    server_socket.bind((HOST, PORT))
     #
     # 4. Start listening for connections.
-    #    Suggested syntax:
-    #    server_socket.listen()
+    server_socket.listen()
     #
     # 5. Create and start the thread that accepts clients.
+    client_threads = []
+    accept_thread = threading.Thread(target=accept_clients_loop)
     #
     # 6. Wait until all expected clients are connected.
+    accept_thread.start()
     #
     # 7. Create and start the auction thread.
+    auction_thread = threading.Thread(target=auction_loop)
+    auction_thread.start()
     #
     # 8. Wait for the auction thread to finish.
+    auction_thread.join()
     #
     # 9. Close the server socket.
+    safe_shutdown_close(server_socket)
     #
     # 10. Wait for the accept thread.
+    accept_thread.join()
     #
     # 11. Close all client sockets.
+    close_all_clients()
     #
     # 12. Wait for all client threads.
+    for thread in client_threads:
+        thread.join(timeout=2)
     #
     # 13. Print SERVER_CLOSED.
-    pass
+    log_message("[SERVER] SERVER_CLOSED")

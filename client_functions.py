@@ -46,7 +46,7 @@ def receive_messages(sock):
     try:
         # This creates a text wrapper around the socket,
         # so messages can be read one line at a time.
-        file_obj = sock.makefile("r", encoding="utf-8")
+        file_obj = sock.makefile("r", encoding="utf-8", newline="\n")
 
         while not stop_event.is_set():
             # Read one full line from the server.
@@ -79,6 +79,22 @@ def receive_messages(sock):
 
 def send_commands(sock):
     try:
+        # Read and send the client name as the first line.
+        while not stop_event.is_set():
+            name_line = sys.stdin.readline()
+
+            if not name_line:
+                return
+
+            if name_line.strip() == "":
+                continue
+
+            if name_line.endswith("\n"):
+                sock.sendall(name_line.encode("utf-8"))
+            else:
+                sock.sendall((name_line + "\n").encode("utf-8"))
+            break
+
         while not stop_event.is_set():
             # Read one line written by the user in the console.
             line = sys.stdin.readline()
@@ -86,16 +102,17 @@ def send_commands(sock):
             if not line:
                 break
 
-            command = line.strip()
-
-            if command == "":
+            if line.strip() == "":
                 continue
 
-            # Send the command as a full line to the server.
-            sock.sendall((command + "\n").encode("utf-8"))
+            # Send the command to the server. 
+            if line.endswith("\n"):
+                sock.sendall(line.encode("utf-8"))
+            else:
+                sock.sendall((line + "\n").encode("utf-8"))
 
             # If the user typed EXIT, stop this loop.
-            if command == "EXIT":
+            if line.strip() == "EXIT":
                 stop_event.set()
 
     except:
@@ -123,13 +140,9 @@ def start_client():
     send_thread.join()
 
     # Wait for the receiving thread.
-    # A timeout can be used to avoid waiting forever.
-    recv_thread.join(timeout=10)
+    recv_thread.join()
 
     # When both threads are done, close the socket.
     stop_event.set()
     # Call safe_shutdown_close(sock)
     safe_shutdown_close(sock)
-
-    # Optional final wait for the receiving thread.
-    recv_thread.join(timeout=2)
