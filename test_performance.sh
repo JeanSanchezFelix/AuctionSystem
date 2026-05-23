@@ -86,13 +86,13 @@ C2_PID=$!
 (
   {
     echo "Carol"
-        sleep 8
+    sleep 8
     echo "VIEW"
     sleep 1
     echo "BID 650"
     sleep 1
     echo "BID 660"
-        sleep 5
+    sleep 5
     echo "BID 550"
   } | python3 "$CLIENT_SCRIPT"
 ) > "$CLIENT3_LOG" 2>&1 &
