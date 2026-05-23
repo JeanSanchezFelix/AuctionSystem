@@ -112,19 +112,10 @@ def broadcast(message):
     # 4. If sending fails, remove that client.
     with clients_lock:
         active_clients = list(clients)
-        
-    for socket in active_clients:
-        try:
-            send_message(socket, message)
-            
-        except Exception as e:
-            
-            print(f"Failed to send message: {e}")
-            
-            with clients_lock:
-                clients.remove_client(socket)
-                    
-            socket.close()
+
+    for sock in active_clients:
+        if not send_message(sock, message):
+            remove_client(sock)
     pass
             
 def remove_client(sock):
@@ -320,8 +311,8 @@ def process_exit(sock):
     with clients_lock:
         passed_current_item[sock] = True
         name = client_names.get(sock)
-        send_message(sock, "[SERVER] OK EXIT")
-        remove_client(sock)
+    send_message(sock, "[SERVER] OK EXIT")
+    remove_client(sock)
     pass
 
 # =========================
@@ -503,6 +494,7 @@ def auction_loop():
         bid_event.clear()
         
         broadcast(f"[SERVER] AUCTION_START ITEM={item['name']} BASE_PRICE={item['base_price']}")
+        last_remaining = None
         
         while auction_active:
             remaining = int(auction_end_time - time.time())
@@ -510,17 +502,23 @@ def auction_loop():
                 auction_active = False
                 break
             
-            # Optionally send TIME_LEFT to clients.
-            # broadcast(f"[SERVER] TIME_LEFT {remaining} seconds")
+            # Send TIME_LEFT updates when the number changes.
+            if remaining != last_remaining:
+                broadcast(f"[SERVER] TIME_LEFT ITEM={item['name']} SECONDS={remaining}")
+                last_remaining = remaining
             
             bid_event.wait(timeout=0.5)
             if bid_event.is_set():
                 bid_event.clear()
     
         if current_winner is not None:
-            broadcast(f"[SERVER] AUCTION_END WINNER={current_winner_name} PRICE={current_price}")
+            broadcast(
+                f"[SERVER] AUCTION_END ITEM={item['name']} WINNER={current_winner_name} PRICE={current_price}"
+            )
         else:
-            broadcast(f"[SERVER] AUCTION_END WINNER=None")
+            broadcast(
+                f"[SERVER] AUCTION_END ITEM={item['name']} WINNER=None PRICE=0"
+            )
         
     broadcast("[SERVER] SERVER_SHUTDOWN")
     stop_event.set()    
@@ -569,7 +567,16 @@ def start_server():
     #
     # 6. Wait until all expected clients are connected.
     accept_thread.start()
-    #
+
+    while not stop_event.is_set():
+        with clients_lock:
+            if len(clients) >= EXPECTED_CLIENTS:
+                break
+        time.sleep(0.05)
+
+    # Stop accepting once we have the expected client count.
+    accepting_clients = False
+
     # 7. Create and start the auction thread.
     auction_thread = threading.Thread(target=auction_loop)
     auction_thread.start()
