@@ -8,9 +8,25 @@ import time
 HOST = "127.0.0.1"
 PORT = 5000
 
-AUCTION_DURATION = 4
+
+def get_env_int(name, default):
+    try:
+        with open("/proc/self/environ", "rb") as env_file:
+            data = env_file.read().split(b"\0")
+        for entry in data:
+            if not entry:
+                continue
+            key, sep, value = entry.partition(b"=")
+            if sep and key.decode("utf-8", errors="ignore") == name:
+                return int(value.decode("utf-8", errors="ignore"))
+    except Exception:
+        pass
+    return default
+
+
+AUCTION_DURATION = get_env_int("AUCTION_DURATION", 20)
 MIN_INCREMENT = 50
-EXPECTED_CLIENTS = 3
+EXPECTED_CLIENTS = get_env_int("EXPECTED_CLIENTS", 3)
 
 # =========================
 # Log

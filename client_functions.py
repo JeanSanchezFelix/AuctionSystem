@@ -134,13 +134,11 @@ def start_client():
     # and one thread for send_commands(sock).
     recv_thread = threading.Thread(target=receive_messages, args=(sock,))
     send_thread = threading.Thread(target=send_commands, args=(sock,))
+    send_thread.daemon = True
 
     # Start both threads.
     recv_thread.start()
     send_thread.start()
-
-    #Wait for the sending thread to finish first.
-    send_thread.join()
 
     # Wait for the receiving thread.
     recv_thread.join()
