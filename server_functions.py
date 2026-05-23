@@ -47,88 +47,87 @@ items = [
     {"name": "Tablet", "base_price": 400},
 ]
 
-# TODO:
 # Create the variables needed to keep the record of connected clients.
-#
-# One possible design is:
-# clients = []
-# client_names = {}
-# client_files = {}
-# client_active = {}
-# passed_current_item = {}
+clients = []                # list of connected client sockets
+client_names = {}       
+client_files = {}           # the text-based file object associated with that socket
+client_active = {}          # whether the client is still active,
+passed_current_item = {}    # whether the client has declined the current auctioned item
 
-# TODO:
 # Create the synchronization objects needed by the server.
-#
-# Suggested syntax:
-# clients_lock = threading.Lock()
-# auction_lock = threading.Lock()
-# bid_event = threading.Event()
-# stop_event = threading.Event()
+clients_lock = threading.Lock()
+auction_lock = threading.Lock()
+bid_event = threading.Event()
+stop_event = threading.Event()
 
-# TODO:
 # Create the global variables needed for:
-# - server_socket
-# - accept_thread
-# - auction_thread
-# - client_threads
-# - accepting_clients
-# - auction_started
-# - current_item_index
-# - current_price
-# - current_winner
-# - current_winner_name
-# - auction_active
-# - auction_end_time
+server_socket = None
+accept_thread = None
+auction_thread = None
+client_threads = []
+accepting_clients = False
+auction_started = False
+current_item_index = 0
+current_price = 0
+current_winner = None
+current_winner_name = ""
+auction_active = False
+auction_end_time = 0
 
 
 # =========================
 # Utilities
 # =========================
 def safe_shutdown_close(sock):
-    # TODO:
+    
     # Close the socket correctly.
-    #
-    # Suggested syntax:
-    # try:
-    #     sock.shutdown(socket.SHUT_RDWR)
-    # except:
-    #     pass
-    #
-    # try:
-    #     sock.close()
-    # except:
-    #     pass
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except:
+        pass
+    
+    try:
+        sock.close()
+    except:
+        pass
     pass
 
 
 def send_message(sock, message):
-    # TODO:
+
     # Send one complete line to a client socket.
-    #
-    # Suggested syntax:
-    # try:
-    #     sock.sendall((message + "\n").encode("utf-8"))
-    #     return True
-    # except:
-    #     return False
+    try:
+        sock.sendall((message + "\n").encode("utf-8"))
+        return True
+    except:
+        return False
     pass
 
 
 def broadcast(message):
-    # TODO:
-    # Send the same message to all active clients.
-    #
     # General steps:
     # 1. Make a copy of the connected client list while protected by clients_lock.
     # 2. Iterate over that copy.
     # 3. For each active client, call send_message(sock, message).
     # 4. If sending fails, remove that client.
+    with clients_lock:
+        active_clients = list(clients)
+        
+    for socket in active_clients:
+        try:
+            send_message(socket, message)
+            
+        except Exception as e:
+            
+            print(f"Failed to send message: {e}")
+            
+            with clients_lock:
+                clients.remove_client(socket)
+                    
+            socket.close()
     pass
-
-
+            
 def remove_client(sock):
-    # TODO:
     # Remove one client from the server record.
     #
     # General steps:
@@ -138,38 +137,66 @@ def remove_client(sock):
     # 4. Remove its name, file object, and PASS flag from dictionaries.
     # 5. After leaving the critical section, close the file object if it exists.
     # 6. Close the socket with safe_shutdown_close(sock).
+    
+    with clients_lock:
+        client_active[sock] = False
+        
+        client_names.pop(sock, None)
+        file_to_close = client_files.pop(sock, None)
+        passed_current_item.pop(sock, None)
+        
+        if sock in clients:
+            clients.remove(sock)
+    
+    if file_to_close is not None:
+        try:
+            file_to_close.close()
+        except Exception:
+            pass             
+        
+    safe_shutdown_close(sock)
     pass
 
 
 def close_all_clients():
-    # TODO:
     # Close every connected client.
     #
     # Suggested logic:
     # 1. Make a copy of the client list.
     # 2. Iterate over the copy.
     # 3. Call remove_client(sock) for each one.
+    with clients_lock:
+        active_clients = list(clients)
+    
+    for sock in active_clients:
+        remove_client(sock)
     pass
 
 
 def get_current_item():
-    # TODO:
     # Return the current item from the item list.
     #
     # Suggested logic:
     # - If current_item_index is valid, return items[current_item_index]
     # - Otherwise return None
-    pass
+    
+    if 0 <= current_item_index < len(items):
+        return items[current_item_index]
+    else:
+        return None
+
 
 
 def reset_pass_flags():
-    # TODO:
     # Reset the PASS flag of all connected clients.
     #
     # Suggested logic:
     # - Enter clients_lock
     # - For every client in the client list:
     #       passed_current_item[sock] = False
+    with clients_lock:
+        for socket in clients:
+            passed_current_item[socket] = False
     pass
 
 
@@ -187,6 +214,9 @@ def process_view(sock):
     # 4. If the auction is active, send:
     #       item name, current price, and current leader
     # 5. Otherwise send VIEW NO_ACTIVE_AUCTION.
+    
+    
+    
     pass
 
 
