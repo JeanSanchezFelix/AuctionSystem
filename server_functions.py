@@ -404,24 +404,48 @@ def accept_clients_loop():
     # TODO:
     # If this function modifies global variables,
     # remember to declare them with global.
+    global accepting_clients
+    global server_socket
+    global client_threads
+    global auction_started
     #
     # General logic:
     # 1. Print that the server is listening.
+    log_message(f"[SERVER] LISTENING ON {HOST}:{PORT}")
     # 2. While the server is accepting clients:
     #       accept a new connection
     #       accept() returns:
     #           sock  -> client socket
     #           addr  -> client address
+    while accepting_clients and not stop_event.is_set():
+        try:
+            sock, addr = server_socket.accept()
+            log_message(f"[SERVER] NEW_CONNECTION FROM {addr}")
+        except Exception as e:
+            log_message(f"[SERVER] ACCEPT_ERROR: {e}")
+            continue
     # 3. If the auction has already started, reject the client.
+        if auction_started:
+            log_message(f"[SERVER] REJECTED CONNECTION FROM {addr} (AUCTION_STARTED)")
+            safe_shutdown_close(sock)
+            continue
     # 4. Otherwise, add the client socket to the client list.
+        else:
+            with clients_lock:
+                clients.append(sock)
+
     # 5. Create one thread for handle_client(sock, addr).
+            client_thread = threading.Thread(target=handle_client, args=(sock, addr))
     # 6. Start the thread and save it in client_threads.
+            client_thread.start()
+            client_threads.append(client_thread)
     # 7. When the number of connected clients reaches EXPECTED_CLIENTS,
     #    stop accepting more clients.
-    #
-    # Suggested socket syntax:
-    # sock, addr = server_socket.accept()
-    pass
+            if len(clients) >= EXPECTED_CLIENTS:
+                log_message(f"[SERVER] EXPECTED NUMBER OF CLIENTS CONNECTED ({EXPECTED_CLIENTS}). STOPPING ACCEPTING NEW CLIENTS.")
+                accepting_clients = False
+                break
+    
 
 
 def auction_loop():
@@ -523,6 +547,7 @@ def start_server():
     global accept_thread
     global auction_thread
     global client_threads
+    global accepting_clients
     #
     # General logic:
     # 1. Create the server socket.
@@ -539,6 +564,7 @@ def start_server():
     #
     # 5. Create and start the thread that accepts clients.
     client_threads = []
+    accepting_clients = True
     accept_thread = threading.Thread(target=accept_clients_loop)
     #
     # 6. Wait until all expected clients are connected.
