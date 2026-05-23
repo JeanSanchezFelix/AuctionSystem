@@ -235,6 +235,7 @@ def process_pass(sock):
 
     send_message(sock, "[SERVER] OK PASS")
     broadcast(f"[SERVER] CLIENT_PASSED NAME={name}")
+
     pass
 
 
@@ -267,6 +268,7 @@ def process_bid(sock, parts):
     global current_winner
     global current_winner_name
     global auction_end_time
+    global AUCTION_DURATION
     
     if len(parts) != 2:
         send_message(sock, "[SERVER] ERROR INVALID_COMMAND")
@@ -277,8 +279,8 @@ def process_bid(sock, parts):
     try:
         amount = int(parts[1])
         sender_name = client_names.get(sock)
+        accepted = False
         with auction_lock:
-            
             # Verify that an auction is active.
             if auction_active:
                 min_valid = current_price + MIN_INCREMENT
@@ -290,15 +292,16 @@ def process_bid(sock, parts):
                     current_winner = sock
                     current_winner_name = sender_name
                     auction_end_time = time.time() + AUCTION_DURATION
+                    accepted = True
 
-                    # Reset this client's PASS flag.
-                    with clients_lock:
-                        passed_current_item[sock] = False
+        if accepted:
+            # Reset this client's PASS flag.
+            with clients_lock:
+                passed_current_item[sock] = False
+            send_message(sock, "[SERVER] OK BID_ACCEPTED")
+            broadcast(f"[SERVER] NEW_BID NAME={sender_name} PRICE={amount}")
+            bid_event.set()
 
-                    send_message(sock, "[SERVER] OK BID_ACCEPTED")
-                    broadcast(f"[SERVER] NEW_BID NAME={sender_name} PRICE={amount}")
-                    bid_event.set()
-            
     except ValueError:
         send_message(sock, "[SERVER] ERROR INVALID_BID_AMOUNT")
         return
@@ -487,37 +490,41 @@ def auction_loop():
     
     auction_started = True
     for index, item in enumerate(items):
-        current_item_index = index
-        current_price = item["base_price"]
-        current_winner = None
-        current_winner_name = ""
-        auction_active = True
-        auction_end_time = time.time() + AUCTION_DURATION
-        
+        with auction_lock:
+            current_item_index = index
+            current_price = item["base_price"]
+            current_winner = None
+            current_winner_name = ""
+            auction_active = True
+            auction_end_time = time.time() + AUCTION_DURATION
+
         reset_pass_flags()
         bid_event.clear()
-        
+
         broadcast(f"[SERVER] AUCTION_START ITEM={item['name']} BASE_PRICE={item['base_price']}")
         last_remaining = None
-        
-        while auction_active:
-            remaining = int(auction_end_time - time.time())
-            if remaining <= 0:
-                auction_active = False
-                break
-            
-            # Send TIME_LEFT updates when the number changes.
+
+        while True:
+            with auction_lock:
+                remaining = int(auction_end_time - time.time())
+                if remaining <= 0:
+                    auction_active = False
+                    winner = current_winner
+                    winner_name = current_winner_name
+                    final_price = current_price
+                    break
+
             if remaining != last_remaining:
                 broadcast(f"[SERVER] TIME_LEFT ITEM={item['name']} SECONDS={remaining}")
                 last_remaining = remaining
-            
+
             bid_event.wait(timeout=0.5)
             if bid_event.is_set():
                 bid_event.clear()
-    
-        if current_winner is not None:
+
+        if winner is not None:
             broadcast(
-                f"[SERVER] AUCTION_END ITEM={item['name']} WINNER={current_winner_name} PRICE={current_price}"
+                f"[SERVER] AUCTION_END ITEM={item['name']} WINNER={winner_name} PRICE={final_price}"
             )
         else:
             broadcast(
