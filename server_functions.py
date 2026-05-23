@@ -8,7 +8,7 @@ import time
 HOST = "127.0.0.1"
 PORT = 5000
 
-AUCTION_DURATION = 20
+AUCTION_DURATION = 4
 MIN_INCREMENT = 50
 EXPECTED_CLIENTS = 3
 
@@ -110,6 +110,8 @@ def broadcast(message):
     # 2. Iterate over that copy.
     # 3. For each active client, call send_message(sock, message).
     # 4. If sending fails, remove that client.
+    log_message(message)
+
     with clients_lock:
         active_clients = list(clients)
 
@@ -229,8 +231,9 @@ def process_pass(sock):
     with clients_lock:
         passed_current_item[sock] = True
         name = client_names.get(sock)
-        send_message(sock, "[SERVER] OK PASS")
-        broadcast(f"[SERVER] CLIENT_PASSED NAME={name}")
+
+    send_message(sock, "[SERVER] OK PASS")
+    broadcast(f"[SERVER] CLIENT_PASSED NAME={name}")
     pass
 
 
@@ -413,6 +416,8 @@ def accept_clients_loop():
             sock, addr = server_socket.accept()
             log_message(f"[SERVER] NEW_CONNECTION FROM {addr}")
         except Exception as e:
+            if isinstance(e, socket.timeout):
+                continue
             log_message(f"[SERVER] ACCEPT_ERROR: {e}")
             continue
     # 3. If the auction has already started, reject the client.
@@ -559,6 +564,7 @@ def start_server():
     #
     # 4. Start listening for connections.
     server_socket.listen()
+    server_socket.settimeout(0.5)
     #
     # 5. Create and start the thread that accepts clients.
     client_threads = []

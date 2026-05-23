@@ -68,7 +68,7 @@ def receive_messages(sock):
 
             # If the server sends SERVER_SHUTDOWN,
             # stop the client by setting stop_event.
-            if message == "SERVER_SHUTDOWN":
+            if "SERVER_SHUTDOWN" in message:
                 stop_event.set()
 
         file_obj.close()
@@ -139,7 +139,7 @@ def start_client():
     recv_thread.start()
     send_thread.start()
 
-    # Wait for the sending thread to finish first.
+    #Wait for the sending thread to finish first.
     send_thread.join()
 
     # Wait for the receiving thread.
