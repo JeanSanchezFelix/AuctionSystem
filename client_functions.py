@@ -93,6 +93,7 @@ def send_commands(sock):
                 sock.sendall(name_line.encode("utf-8"))
             else:
                 sock.sendall((name_line + "\n").encode("utf-8"))
+            log_message("[CLIENT] NAME_SENT")
             break
 
         while not stop_event.is_set():
@@ -113,6 +114,7 @@ def send_commands(sock):
 
             # If the user typed EXIT, stop this loop.
             if line.strip() == "EXIT":
+                log_message("[CLIENT] EXIT_SENT")
                 stop_event.set()
 
     except:
@@ -126,6 +128,7 @@ def start_client():
 
     # Connect the socket to the server.
     sock.connect((HOST, PORT))
+    log_message(f"[CLIENT] CONNECTED TO {HOST}:{PORT}")
 
     # Create one thread for receive_messages(sock)
     # and one thread for send_commands(sock).
@@ -146,3 +149,4 @@ def start_client():
     stop_event.set()
     # Call safe_shutdown_close(sock)
     safe_shutdown_close(sock)
+    log_message("[CLIENT] SOCKET_CLOSED")
