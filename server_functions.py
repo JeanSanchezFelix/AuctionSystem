@@ -416,8 +416,6 @@ def accept_clients_loop():
             sock, addr = server_socket.accept()
             log_message(f"[SERVER] NEW_CONNECTION FROM {addr}")
         except Exception as e:
-            if isinstance(e, socket.timeout):
-                continue
             log_message(f"[SERVER] ACCEPT_ERROR: {e}")
             continue
     # 3. If the auction has already started, reject the client.
