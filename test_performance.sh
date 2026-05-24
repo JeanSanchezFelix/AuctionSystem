@@ -37,7 +37,7 @@ fi
 
 echo
 echo "Test 3: lanzar servidor"
-AUCTION_DURATION=20 EXPECTED_CLIENTS=3 python3 "$SERVER_SCRIPT" > "$SERVER_LOG" 2>&1 &
+AUCTION_DURATION=4 EXPECTED_CLIENTS=3 python3 "$SERVER_SCRIPT" > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 sleep 1
 
@@ -86,13 +86,13 @@ C2_PID=$!
 (
   {
     echo "Carol"
-        sleep 30
+    sleep 8
     echo "VIEW"
     sleep 1
     echo "BID 650"
     sleep 1
     echo "BID 660"
-        sleep 25
+    sleep 5
     echo "BID 550"
   } | python3 "$CLIENT_SCRIPT"
 ) > "$CLIENT3_LOG" 2>&1 &
